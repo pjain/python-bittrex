@@ -2,22 +2,44 @@ python-bittrex
 ==============
 
 [![Build Status](https://travis-ci.org/ericsomdahl/python-bittrex.svg?branch=master)](https://travis-ci.org/ericsomdahl/python-bittrex)
+[![PyPI version](https://badge.fury.io/py/python-bittrex.svg)](https://badge.fury.io/py/python-bittrex)
 
 Python bindings for bittrex.  I am Not associated -- use at your own risk, etc.
 
-Tips are appreciated:
-* BTC: 1D7F9ZF6BCoCh2MncK15jxHM1T5BPX9Ajd
-* LTC: LaasG9TRa9p32noN2oKUVVqrDFp4Ja1NK3
+
+Installation
+-------------
+
+### for most recent stable release
+`pip install python-bittrex`
+
+### for bleeding edge development 
+`pip install git+https://github.com/ericsomdahl/python-bittrex.git`
+
+API Documentation
+-------------
+**API 1.1 is considered stable**
+
+[Official API Documentation](https://bittrex.com/Home/Api)
+
+**API 2.0 is BETA, use at your own risk**
+
+[Unofficial 2.0 API Documentation](https://github.com/thebotguys/golang-bittrex-api/wiki/Bittrex-API-Reference-(Unofficial)) - The golang guys have been diligently following the rapid changes to the 2.0 Beta, but use at your own risk.
 
 
 Example Usage for Bittrex API
 -------------
 
 ```python
-from bittrex import Bittrex
+from bittrex.bittrex import Bittrex, API_V2_0
 
 my_bittrex = Bittrex(None, None, api_version=API_V2_0)  # or defaulting to v1.1 as Bittrex(None, None)
 my_bittrex.get_markets()
+```
+
+This call to get_markets returns an object such as the following:
+
+```python
 {'success': True, 'message': '', 'result': [{'MarketCurrency': 'LTC', ...
 ```
 
@@ -29,11 +51,17 @@ Make sure you save the secret, as it will not be visible
 after navigating away from the page. 
 
 ```python
-from bittrex import Bittrex
+from bittrex.bittrex import *
 
 my_bittrex = Bittrex("<my_api_key>", "<my_api_secret>", api_version="<API_V1_1> or <API_V2_0>")
 
 my_bittrex.get_balance('ETH')
+
+```
+
+This call to get_balance returns an object such as the following:
+
+```python
 {'success': True, 
  'message': '',
  'result': {'Currency': 'ETH', 'Balance': 0.0, 'Available': 0.0, 

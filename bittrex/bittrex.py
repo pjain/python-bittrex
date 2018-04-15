@@ -8,10 +8,8 @@ import hashlib
 
 try:
     from urllib import urlencode
-    from urlparse import urljoin
 except ImportError:
     from urllib.parse import urlencode
-    from urllib.parse import urljoin
 
 try:
     from Crypto.Cipher import AES
@@ -29,6 +27,8 @@ import requests
 BUY_ORDERBOOK = 'buy'
 SELL_ORDERBOOK = 'sell'
 BOTH_ORDERBOOK = 'both'
+
+TRADE_FEE = 0.0025
 
 TICKINTERVAL_ONEMIN = 'oneMin'
 TICKINTERVAL_FIVEMIN = 'fiveMin'
@@ -74,7 +74,8 @@ def encrypt(api_key, api_secret, export=True, export_fn='secrets.json'):
 def using_requests(request_url, apisign):
     return requests.get(
         request_url,
-        headers={"apisign": apisign}
+        headers={"apisign": apisign},
+        timeout=10
     ).json()
 
 
@@ -115,7 +116,7 @@ class Bittrex(object):
             passed = now - self.last_call
             if passed < self.call_rate:
                 # print("sleep")
-                time.sleep(1.0 - passed)
+                time.sleep(self.call_rate - passed)
 
             self.last_call = time.time()
 
@@ -145,13 +146,21 @@ class Bittrex(object):
 
         request_url += urlencode(options)
 
-        apisign = hmac.new(self.api_secret.encode(),
-                           request_url.encode(),
-                           hashlib.sha512).hexdigest()
+        try:
+            apisign = hmac.new(self.api_secret.encode(),
+                               request_url.encode(),
+                               hashlib.sha512).hexdigest()
 
-        self.wait()
+            self.wait()
 
-        return self.dispatch(request_url, apisign)
+            return self.dispatch(request_url, apisign)
+
+        except Exception:
+            return {
+                'success': False,
+                'message': 'NO_API_RESPONSE',
+                'result': None
+            }
 
     def get_markets(self):
         """
@@ -159,7 +168,7 @@ class Bittrex(object):
         at Bittrex along with other meta data.
 
         1.1 Endpoint: /public/getmarkets
-        2.0 Endpoint: /pub/Markets/GetMarkets
+        2.0 NO Equivalent
 
         Example ::
             {'success': True,
@@ -184,7 +193,6 @@ class Bittrex(object):
         """
         return self._api_query(path_dict={
             API_V1_1: '/public/getmarkets',
-            API_V2_0: '/pub/Markets/GetMarkets'
         }, protection=PROTECTION_PUB)
 
     def get_currencies(self):
@@ -210,7 +218,7 @@ class Bittrex(object):
 
         Endpoints:
         1.1 /public/getticker
-        2.0 NO EQUIVALENT -- but get_candlesticks gives comparable data
+        2.0 NO EQUIVALENT -- but get_latest_candle gives comparable data
 
         :param market: String literal for the market (ex: BTC-LTC)
         :type market: str
@@ -237,7 +245,7 @@ class Bittrex(object):
             API_V2_0: '/pub/Markets/GetMarketSummaries'
         }, protection=PROTECTION_PUB)
 
-    def get_marketsummary(self, market):
+    def get_market_summary(self, market):
         """
         Used to get the last 24 hour summary of all active
         exchanges in specific coin
@@ -260,7 +268,7 @@ class Bittrex(object):
         """
         Used to get retrieve the orderbook for a given market.
 
-        The depth_type parameter is IGNORED under v2.0 and both orderbooks are aleways returned
+        The depth_type parameter is IGNORED under v2.0 and both orderbooks are always returned
 
         Endpoint:
         1.1 /public/getorderbook
@@ -287,7 +295,7 @@ class Bittrex(object):
 
         Endpoint:
         1.1 /market/getmarkethistory
-        2.0 /pub/Market/GetMarketHistory
+        2.0 NO Equivalent
 
         Example ::
             {'success': True,
@@ -310,7 +318,6 @@ class Bittrex(object):
         """
         return self._api_query(path_dict={
             API_V1_1: '/public/getmarkethistory',
-            API_V2_0: '/pub/Market/GetMarketHistory'
         }, options={'market': market, 'marketname': market}, protection=PROTECTION_PUB)
 
     def buy_limit(self, market, quantity, rate):
@@ -351,7 +358,7 @@ class Bittrex(object):
 
         :param market: String literal for the market (ex: BTC-LTC)
         :type market: str
-        :param quantity: The amount to purchase
+        :param quantity: The amount to sell
         :type quantity: float
         :param rate: The rate at which to place the order.
             This is not needed for market orders
@@ -371,7 +378,7 @@ class Bittrex(object):
 
         Endpoint:
         1.1 /market/cancel
-        2.0 /key/market/cancel
+        2.0 /key/market/tradecancel
 
         :param uuid: uuid of buy or sell order
         :type uuid: str
@@ -380,7 +387,7 @@ class Bittrex(object):
         """
         return self._api_query(path_dict={
             API_V1_1: '/market/cancel',
-            API_V2_0: '/key/market/cancel'
+            API_V2_0: '/key/market/tradecancel'
         }, options={'uuid': uuid, 'orderid': uuid}, protection=PROTECTION_PRV)
 
     def get_open_orders(self, market=None):
@@ -408,7 +415,7 @@ class Bittrex(object):
 
         Endpoint:
         1.1 /account/getbalances
-        2.0 /key/balance/getbalances
+        2.0 /key/balance/GetBalances
 
         Example ::
             {'success': True,
@@ -428,7 +435,7 @@ class Bittrex(object):
         """
         return self._api_query(path_dict={
             API_V1_1: '/account/getbalances',
-            API_V2_0: '/key/balance/getbalances'
+            API_V2_0: '/key/balance/GetBalances'
         }, protection=PROTECTION_PRV)
 
     def get_balance(self, currency):
@@ -478,7 +485,7 @@ class Bittrex(object):
             API_V2_0: '/key/balance/getdepositaddress'
         }, options={'currency': currency, 'currencyname': currency}, protection=PROTECTION_PRV)
 
-    def withdraw(self, currency, quantity, address):
+    def withdraw(self, currency, quantity, address, paymentid=None):
         """
         Used to withdraw funds from your account
 
@@ -492,13 +499,22 @@ class Bittrex(object):
         :type quantity: float
         :param address: The address where to send the funds.
         :type address: str
+        :param paymentid: Optional argument for memos, tags, or other supplemental information for cryptos such as XRP.
+        :type paymentid: str
         :return:
         :rtype : dict
         """
+        options = {
+            'currency': currency,
+            'quantity': quantity,
+            'address': address
+        }
+        if paymentid:
+            options['paymentid'] = paymentid
         return self._api_query(path_dict={
             API_V1_1: '/account/withdraw',
             API_V2_0: '/key/balance/withdrawcurrency'
-        }, options={'currency': currency, 'quantity': quantity, 'address': address}, protection=PROTECTION_PRV)
+        }, options=options, protection=PROTECTION_PRV)
 
     def get_order_history(self, market=None):
         """
@@ -506,7 +522,7 @@ class Bittrex(object):
 
         Endpoint:
         1.1 /account/getorderhistory
-        2.0 /key/orders/getorderhistory
+        2.0 /key/orders/getorderhistory or /key/market/GetOrderHistory
 
         :param market: optional a string literal for the market (ie. BTC-LTC).
             If omitted, will return for all markets
@@ -514,10 +530,16 @@ class Bittrex(object):
         :return: order history in JSON
         :rtype : dict
         """
-        return self._api_query(path_dict={
-            API_V1_1: '/account/getorderhistory',
-            API_V2_0: '/key/orders/getorderhistory'
-        }, options={'market': market, 'marketname': market} if market else None, protection=PROTECTION_PRV)
+        if market:
+            return self._api_query(path_dict={
+                API_V1_1: '/account/getorderhistory',
+                API_V2_0: '/key/market/GetOrderHistory'
+            }, options={'market': market, 'marketname': market}, protection=PROTECTION_PRV)
+        else:
+            return self._api_query(path_dict={
+                API_V1_1: '/account/getorderhistory',
+                API_V2_0: '/key/orders/getorderhistory'
+            }, protection=PROTECTION_PRV)
 
     def get_order(self, uuid):
         """
@@ -622,9 +644,9 @@ class Bittrex(object):
             API_V2_0: '/pub/Currency/GetBalanceDistribution'
         }, protection=PROTECTION_PUB)
 
-    def get_pending_withdrawls(self, currency=None):
+    def get_pending_withdrawals(self, currency=None):
         """
-        Used to view your pending withdrawls
+        Used to view your pending withdrawals
 
         Endpoint:
         1.1 NO EQUIVALENT
@@ -632,7 +654,7 @@ class Bittrex(object):
 
         :param currency: String literal for the currency (ie. BTC)
         :type currency: str
-        :return: pending widthdrawls in JSON
+        :return: pending withdrawals in JSON
         :rtype : list
         """
         return self._api_query(path_dict={
@@ -757,7 +779,7 @@ class Bittrex(object):
 
     def get_candles(self, market, tick_interval):
         """
-        Used to get all tick candle for a market.
+        Used to get all tick candles for a market.
 
         Endpoint:
         1.1 NO EQUIVALENT
@@ -783,7 +805,7 @@ class Bittrex(object):
                    BV: 1012.63286332 }]
             }
 
-        :return: Available tick candle in JSON
+        :return: Available tick candles in JSON
         :rtype: dict
         """
 
@@ -793,37 +815,33 @@ class Bittrex(object):
             'marketName': market, 'tickInterval': tick_interval
         }, protection=PROTECTION_PUB)
 
-
-    def get_btc_price(self):
+    def get_latest_candle(self, market, tick_interval):
         """
-                Returns the current USD Bitcoin price .
-                Endpoint:
-                1.1 NO EQUIVALENT
-                2.0 /pub/currencies/GetBTCPrice
-                Example  ::
-                    { success: true,
-                      message: "",
-                      result: {
-                        time: {
-                            updated: "Nov 16, 2017 18:18:00 UTC",
-                            updatedISO: "2017-11-16T18:18:00+00:00",
-                            updateduk: "Nov 16, 2017 at 18:18 GMT"
-                        },
-                        disclaimer: "This data was produced from the CoinDesk Bitcoin Price Index (USD). Non-USD currency data converted using hourly conversion rate from openexchangerates.org",
-                        bpi: {
-                            USD: {
-                                code: "USD",
-                                rate: "7,689.1775",
-                                description: "United States Dollar",
-                                rate_float: 7689.1775
-                                }
-                            }
-                        }
-                    }
-                :return: Current BTC price in USD in JSON
-                :rtype: dict
-                """
+        Used to get the latest candle for the market.
+
+        Endpoint:
+        1.1 NO EQUIVALENT
+        2.0 /pub/market/GetLatestTick
+
+        Example ::
+            { success: true,
+              message: '',
+              result:
+              [ {   O : 0.00350397,
+                    H : 0.00351000,
+                    L : 0.00350000,
+                    C : 0.00350350,
+                    V : 1326.42643480,
+                    T : 2017-11-03T03:18:00,
+                    BV: 4.64416189 } ]
+            }
+
+        :return: Available latest tick candle in JSON
+        :rtype: dict
+        """
 
         return self._api_query(path_dict={
-            API_V2_0: '/pub/currencies/GetBTCPrice'
-        }, protection=PROTECTION_PUB)    
+            API_V2_0: '/pub/market/GetLatestTick'
+        }, options={
+            'marketName': market, 'tickInterval': tick_interval
+        }, protection=PROTECTION_PUB)
