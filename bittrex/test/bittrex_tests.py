@@ -1,9 +1,12 @@
 import unittest
 import json
-import os
 from bittrex.bittrex import Bittrex, API_V2_0, API_V1_1, BUY_ORDERBOOK, TICKINTERVAL_ONEMIN
 
-IS_CI_ENV = True if 'IN_CI' in os.environ else False
+try:
+    open("secrets.json").close()
+    IS_CI_ENV = False
+except Exception:
+    IS_CI_ENV = True
 
 
 def test_basic_response(unit_test, result, method_name):
@@ -81,6 +84,10 @@ class TestBittrexV11PublicAPI(unittest.TestCase):
         self.assertRaisesRegexp(Exception, 'method call not available', self.bittrex.get_candles, market='BTC-LTC',
                                 tick_interval=TICKINTERVAL_ONEMIN)
 
+    def test_get_latest_candle(self):
+        self.assertRaisesRegexp(Exception, 'method call not available', self.bittrex.get_latest_candle, market='BTC-LTC',
+                                tick_interval=TICKINTERVAL_ONEMIN)
+
 
 class TestBittrexV20PublicAPI(unittest.TestCase):
     """
@@ -94,22 +101,16 @@ class TestBittrexV20PublicAPI(unittest.TestCase):
     def test_handles_none_key_or_secret(self):
         self.bittrex = Bittrex(None, None, api_version=API_V2_0)
         # could call any public method here
-        actual = self.bittrex.get_markets()
+        actual = self.bittrex.get_market_summaries()
         self.assertTrue(actual['success'], "failed with None key and None secret")
 
         self.bittrex = Bittrex("123", None, api_version=API_V2_0)
-        actual = self.bittrex.get_markets()
+        actual = self.bittrex.get_market_summaries()
         self.assertTrue(actual['success'], "failed with None secret")
 
         self.bittrex = Bittrex(None, "123", api_version=API_V2_0)
-        actual = self.bittrex.get_markets()
+        actual = self.bittrex.get_market_summaries()
         self.assertTrue(actual['success'], "failed with None key")
-
-    def test_get_markets(self):
-        actual = self.bittrex.get_markets()
-        test_basic_response(self, actual, "get_markets")
-        self.assertTrue(isinstance(actual['result'], list), "result is not a list")
-        self.assertTrue(len(actual['result']) > 0, "result list is 0-length")
 
     def test_get_currencies(self):
         actual = self.bittrex.get_currencies()
@@ -124,20 +125,12 @@ class TestBittrexV20PublicAPI(unittest.TestCase):
         test_basic_response(self, actual, "get_market_summaries")
 
     def test_get_market_summary(self):
-        actual = self.bittrex.get_marketsummary(market='BTC-LTC')
-        test_basic_response(self, actual, "get_marketsummary")
+        actual = self.bittrex.get_market_summary(market='BTC-LTC')
+        test_basic_response(self, actual, "get_market_summary")
 
     def test_get_orderbook(self):
         actual = self.bittrex.get_orderbook('BTC-LTC')
         test_basic_response(self, actual, "get_orderbook")
-
-    def test_get_market_history(self):
-        actual = self.bittrex.get_market_history('BTC-LTC')
-        test_basic_response(self, actual, "get_market_history")
-
-    def test_list_markets_by_currency(self):
-        actual = self.bittrex.list_markets_by_currency('LTC')
-        self.assertListEqual(['BTC-LTC', 'ETH-LTC', 'USDT-LTC'], actual)
 
     def test_get_wallet_health(self):
         actual = self.bittrex.get_wallet_health()
@@ -155,9 +148,10 @@ class TestBittrexV20PublicAPI(unittest.TestCase):
         test_basic_response(self, actual, "test_get_candles")
         self.assertIsInstance(actual['result'], list)
 
-    def test_get_btc_price(self):
-        actual = self.bittrex.get_btc_price()
-        test_basic_response(self, actual, "get_btc_price")
+    def test_get_latest_candle(self):
+        actual = self.bittrex.get_latest_candle('BTC-LTC', tick_interval=TICKINTERVAL_ONEMIN)
+        test_basic_response(self, actual, "test_get_latest_candle")
+        self.assertIsInstance(actual['result'], list)
 
 
 @unittest.skipIf(IS_CI_ENV, 'no account secrets uploaded in CI envieonment, TODO')
@@ -257,8 +251,8 @@ class TestBittrexV11AccountAPI(unittest.TestCase):
         test_basic_response(self, actual, "get_deposit_history")
         self.assertIsInstance(actual['result'], list, "result is not a list")
 
-    def test_get_pending_withdrawls(self):
-        self.assertRaisesRegexp(Exception, 'method call not available', self.bittrex.get_pending_withdrawls)
+    def test_get_pending_withdrawals(self):
+        self.assertRaisesRegexp(Exception, 'method call not available', self.bittrex.get_pending_withdrawals)
 
     def test_get_pending_deposits(self):
         self.assertRaisesRegexp(Exception, 'method call not available', self.bittrex.get_pending_deposits)
@@ -363,14 +357,14 @@ class TestBittrexV20AccountAPI(unittest.TestCase):
         test_basic_response(self, actual, "get_deposit_history")
         self.assertIsInstance(actual['result'], list, "result is not a list")
 
-    def test_get_pending_withdrawls_all_currencies(self):
-        actual = self.bittrex.get_pending_withdrawls()
-        test_basic_response(self, actual, "get_pending_withdrawls")
+    def test_get_pending_withdrawals_all_currencies(self):
+        actual = self.bittrex.get_pending_withdrawals()
+        test_basic_response(self, actual, "get_pending_withdrawals")
         self.assertIsInstance(actual['result'], list, "result is not a list")
 
-    def test_get_pending_withdrawls_one_currency(self):
-        actual = self.bittrex.get_pending_withdrawls('BTC')
-        test_basic_response(self, actual, "get_pending_withdrawls")
+    def test_get_pending_withdrawals_one_currency(self):
+        actual = self.bittrex.get_pending_withdrawals('BTC')
+        test_basic_response(self, actual, "get_pending_withdrawals")
         self.assertIsInstance(actual['result'], list, "result is not a list")
 
     def test_get_pending_deposits_all_currencies(self):
